@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mijn Training App (HR & FTP)</title>
+    <style>
+        :root {
+            --bg: #121212; --surface: #1e1e1e; --primary: #ff4757; --accent: #38bdf8;
+            --text: #ffffff; --text-sec: #aaaaaa; --border: #333;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 20px; max-width: 500px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; margin-bottom: 20px; color: var(--primary); text-align: center; }
+        .card { background: var(--surface); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border); }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-sec); }
+        input, select { width: 100%; padding: 12px; margin-bottom: 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 1rem; }
+        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button:hover { opacity: 0.9; }
+        .workout-preview { margin-top: 20px; padding: 15px; background: var(--bg); border-radius: 8px; font-size: 0.9rem; line-height: 1.6; display: none; }
+        .zone { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; margin-right: 5px; }
+        .z1 { background: #3498db; color: #fff; } .z3 { background: #e74c3c; color: #fff; }
+        .metric { color: var(--accent); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>🚴 Mijn Training App</h1>
+
+    <div class="card">
+        <div class="grid-2">
+            <div>
+                <label>Mijn FTP (Watt)</label>
+                <input type="number" id="ftp-input" value="250" onchange="saveSettings()">
+            </div>
+            <div>
+                <label>Omslagpunt (Hartslag)</label>
+                <input type="number" id="lthr-input" value="165" onchange="saveSettings()">
+            </div>
+        </div>
+
+        <label>Type Training Vandaag</label>
+        <select id="workout-type" onchange="generatePreview()">
+            <option value="endurance">Lange Duurrit (Zone 1) - 2 uur</option>
+            <option value="vo2max">VO2 Max Intervallen (Zone 3) - 1 uur</option>
+            <option value="recovery">Actief Herstel - 45 min</option>
+        </select>
+        
+        <button onclick="downloadWorkout()">📥 Download Workout (.zwo)</button>
+
+        <div id="preview" class="workout-preview"></div>
+    </div>
+
+    <script>
+        function saveSettings() {
+            localStorage.setItem("myFTP", document.getElementById("ftp-input").value);
+            localStorage.setItem("myLTHR", document.getElementById("lthr-input").value);
+            generatePreview();
+        }
+
+        window.onload = function() {
+            if(localStorage.getItem("myFTP")) document.getElementById("ftp-input").value = localStorage.getItem("myFTP");
+            if(localStorage.getItem("myLTHR")) document.getElementById("lthr-input").value = localStorage.getItem("myLTHR");
+            generatePreview();
+        }
+
+        function getWorkoutData() {
+            const type = document.getElementById("workout-type").value;
+            const ftp = parseInt(document.getElementById("ftp-input").value) || 250;
+            const lthr = parseInt(document.getElementById("lthr-input").value) || 165;
+            
+            const hrZ1Max = Math.round(lthr * 0.83); 
+            const hrRecovery = Math.round(lthr * 0.68);
+            const hrZ3Min = Math.round(lthr * 1.02); 
+
+            let name, desc, zwo, preview;
+
+            if (type === "vo2max") {
+                name = "VO2 Max 4x4";
+                desc = `Z3 Intervallen. Doel hartslag in blokken: >${hrZ3Min} BPM (boven omslagpunt).`;
+                zwo = `<Warmup Duration="900" PowerLow="0.4" PowerHigh="0.65"/>
+                       <IntervalsT Repeat="4" OnDuration="240" OffDuration="180" OnPower="1.10" OffPower="0.50"/>
+                       <Cooldown Duration="900" PowerLow="0.6" PowerHigh="0.4"/>`;
+                preview = `<span class="zone z1">Z1</span> 15m Warming-up<br>
+                           <span class="zone z3">Z3</span> 4 x (4m op <span class="metric">${Math.round(ftp * 1.10)}W / >${hrZ3Min} BPM</span> + 3m rust)<br>
+                           <span class="zone z1">Z1</span> 15m Cooling-down`;
+            } else if (type === "endurance") {
+                name = "Base Endurance";
+                desc = `Gestaag in Z1. Max hartslag: ${hrZ1Max} BPM.`;
+                zwo = `<Warmup Duration="600" PowerLow="0.4" PowerHigh="0.6"/>
+                       <SteadyState Duration="6000" Power="0.65"/>
+                       <Cooldown Duration="600" PowerLow="0.6" PowerHigh="0.4"/>`;
+                preview = `<span class="zone z1">Z1</span> 10m Warming-up<br>
+                           <span class="zone z1">Z1</span> 1u 40m Duur op <span class="metric">${Math.round(ftp * 0.65)}W / <${hrZ1Max} BPM</span><br>
+                           <span class="zone z1">Z1</span> 10m Cooling-down`;
+            } else {
+                name = "Active Recovery";
+                desc = `Herstel. Max hartslag: ${hrRecovery} BPM.`;
+                zwo = `<SteadyState Duration="2700" Power="0.45"/>`;
+                preview = `<span class="zone z1">Z1</span> 45m Losrijden op max <span class="metric">${Math.round(ftp * 0.45)}W / <${hrRecovery} BPM</span>`;
+            }
+
+            return { name, desc, zwo, preview };
+        }
+
+        function generatePreview() {
+            const data = getWorkoutData();
+            const previewDiv = document.getElementById("preview");
+            
+            previewDiv.innerHTML = `<strong>${data.name}</strong><br>
+                                    <small style="color:var(--text-sec);">${data.desc}</small><br><br>
+                                    ${data.preview}`;
+            previewDiv.style.display = "block";
+        }
+
+        function downloadWorkout() {
+            const data = getWorkoutData();
+            const xmlContent = \`<?xml version="1.0" encoding="UTF-8" ?>
+<workout_file>
+  <author>Mijn App</author>
+  <name>\${data.name}</name>
+  <description>\${data.desc}</description>
+  <sportType>bike</sportType>
+  <workout>
+    \${data.zwo}
+  </workout>
+</workout_file>\`;
+
+            const blob = new Blob([xmlContent], { type: "text/xml" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = \`\${data.name.replace(/\\s+/g, '_')}.zwo\`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
